@@ -75,6 +75,146 @@ resource "aws_route_table_association" "public_2_assoc" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_security_group" "alb_sg" {
+  name        = "porknacho-alb-sg"
+  description = "Allow HTTP inbound traffic to ALB"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" 
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "porknacho-alb-sg"
+    owner = "Papi"
+  }
+}
+
+resource "aws_security_group" "ec2_sg" {
+  name        = "porknacho-ec2-sg"
+  description = "Allow HTTP from ALB and SSH to EC2 instances"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # WARNING: This allows SSH from anywhere. Restrict in production!
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1" # All protocols
+    cidr_blocks = ["0.0.0.0/0"] # Allow all outbound traffic
+  }
+
+  tags = {
+    Name = "porknacho-ec2-sg"
+    owner = "Papi"
+  }
+}
+
+data "aws_ami" "amazon_linux_2" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+resource "aws_key_pair" "web_app_key" {
+  key_name   = "porknacho-key"
+  public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB+S3wrjfIrlJcs6QE9cxHnIpWvNVjJPJdgmRi+8ILg+ john@LAPTOP-1B2MQN2-BOLTON"
+}
+
+resource "aws_launch_template" "webapp_lt" {
+  name_prefix   = "porknacho-lt-"
+  image_id      = data.aws_ami.amazon_linux_2.id
+  instance_type = "t2.micro" # Or "t3.micro" for general purpose
+
+  key_name = aws_key_pair.web_app_key.key_name # Attach the key pair
+
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+
+# User data script to install httpd, stress, and configure index.html
+user_data = base64encode(<<EOF
+#!/bin/bash
+yum update -y
+yum install -y httpd stress
+
+# Start and enable httpd
+systemctl start httpd
+systemctl enable httpd
+
+# Create index.html with hostname and instance ID
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+HOSTNAME=$(hostname)
+echo "<html><body><h1>Hello from EC2 Instance: $HOSTNAME ($INSTANCE_ID)</h1>" > /var/www/html/index.html
+echo "<p>This page is served by Apache HTTP Server.</p></body></html>" >> /var/www/html/index.html
+
+# Set appropriate permissions for index.html
+chmod 644 /var/www/html/index.html
+chown apache:apache /var/www/html/index.html
+
+# You can manually run stress from SSH or uncomment below for automatic stress
+# echo "Running stress for 300 seconds on one CPU core..." >> /var/log/user-data.log
+# stress --cpu 1 --timeout 300 &
+# echo "Stress command initiated." >> /var/log/user-data.log
+EOF
+  )
+
+  tags = {
+    Name = "porknacho-launch-template"
+    owner = "Papi"
+  }
+}
+resource "aws_lb_target_group" "webapp_tg" {
+  name        = "porknacho-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200" # Expect HTTP 200 OK
+    interval            = 30    # Check every 30 seconds
+    timeout             = 5     # Timeout after 5 seconds
+    healthy_threshold   = 2     # 2 consecutive successful checks for healthy
+    unhealthy_threshold = 2     # 2 consecutive failed checks for unhealthy
+  }
+
+  tags = {
+    Name = "porknacho-target-group"
+    owner = "Papi"
+  }
+}
+
+
 output "vpc_id" {
   description = "ID of VPC"
   value       = aws_vpc.main.id
