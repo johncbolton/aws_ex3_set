@@ -27,5 +27,17 @@ cloud "AWS Cloud" as aws {
     }
 }
 
+route53 --> hostedZone
+
+launchTemplate --> instances : Launches
+
+targetGroup --> instance1 : Registers
+targetGroup --> instance2 : Registers
+targetGroup --> instanceN : Registers
+
+targetGroup ..> instance1 : HTTP Health Check (GET /)
+targetGroup ..> instance2 : HTTP Health Check (GET /)
+targetGroup ..> instanceN : HTTP Health Check (GET /)
+
 
 @enduml
