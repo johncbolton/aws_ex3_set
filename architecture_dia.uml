@@ -1,43 +1,85 @@
 @startuml
-
 !theme mars
 
-title Diagram
+title PorkNacho AWS Architecture
 
 cloud "AWS Cloud" as aws {
 
     rectangle "Route 53" as route53 {
         component "Hosted Zone\n(yourdomain.dev)" as hostedZone
+        component "A Record\n(app.yourdomain.dev)" as aliasRecord
+    }
+
+    rectangle "VPC" as vpc {
+        component "VPC\n10.0.0.0/16" as vpcMain
+        component "Internet Gateway" as igw
+        component "Route Table\n(porknacho-public-rt)" as rt
+        component "Public Subnet 1\n10.0.1.0/24" as subnet1
+        component "Public Subnet 2\n10.0.2.0/24" as subnet2
+    }
+
+    rectangle "Security Groups" as sgs {
+        component "ALB SG\nAllow HTTP (80)" as albSG
+        component "EC2 SG\nAllow HTTP from ALB,\nSSH from anywhere" as ec2SG
     }
 
     rectangle "EC2" as ec2 {
-        component "Launch Template" as launchTemplate {
-            note right: Amazon Linux 2\nhttpd + stress preinstalled\nindex.html shows hostname & ID
-        }
-
-        database "EC2 Instances" as instances {
-            collections "Instance 1" as instance1
-            collections "Instance 2" as instance2
+        component "Key Pair\n(porknacho-key)" as keypair
+        component "Amazon Linux 2 AMI" as ami
+        component "Launch Template\nhttpd + stress\nuser_data.sh" as lt
+        database "Auto Scaling Group\n(min:1 max:4)" as asg {
+            collections "EC2 Instance 1" as instance1
+            collections "EC2 Instance 2" as instance2
             collections "..." as instanceN
         }
+        component "Target Tracking Policy\nCPU > 50%" as scalingPolicy
+    }
 
-        rectangle "Target Group" as targetGroup {
-            note right: HTTP Health Checks on "/"
-        }
+    rectangle "ALB" as alb {
+        component "Application Load Balancer\n(porknacho-alb)" as theALB
+        component "HTTP Listener\nport 80" as listener
+        component "Target Group\nHealth Check: /" as targetGroup
     }
 }
 
+' Route53
 route53 --> hostedZone
+hostedZone --> aliasRecord
+aliasRecord --> theALB : Alias A Record
 
-launchTemplate --> instances : Launches
+' Networking
+vpcMain --> igw
+vpcMain --> rt
+vpcMain --> subnet1
+vpcMain --> subnet2
+subnet1 --> rt
+subnet2 --> rt
 
-targetGroup --> instance1 : Registers
-targetGroup --> instance2 : Registers
-targetGroup --> instanceN : Registers
+' Security groups
+albSG --> theALB
+ec2SG --> asg
 
-targetGroup ..> instance1 : HTTP Health Check (GET /)
-targetGroup ..> instance2 : HTTP Health Check (GET /)
-targetGroup ..> instanceN : HTTP Health Check (GET /)
+' ALB and listener
+theALB --> listener
+listener --> targetGroup
 
+' EC2 infra
+lt --> ami
+lt --> keypair
+lt --> ec2SG
+asg --> lt : Launches
+asg --> targetGroup : Registers with
+asg --> scalingPolicy : Uses
+
+' Instances
+asg --> instance1
+asg --> instance2
+asg --> instanceN
+
+' Health Checks
+targetGroup ..> instance1 : HTTP Check (GET /)
+targetGroup ..> instance2 : HTTP Check (GET /)
+targetGroup ..> instanceN : HTTP Check (GET /)
 
 @enduml
+
