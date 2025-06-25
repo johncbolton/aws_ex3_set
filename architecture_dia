@@ -14,7 +14,17 @@ cloud "AWS Cloud" as aws {
         component "Launch Template" as launchTemplate {
             note right: Amazon Linux 2\nhttpd + stress preinstalled\nindex.html shows hostname & ID
         }
-}
+
+        database "EC2 Instances" as instances {
+            collections "Instance 1" as instance1
+            collections "Instance 2" as instance2
+            collections "..." as instanceN
+        }
+
+        rectangle "Target Group" as targetGroup {
+            note right: HTTP Health Checks on "/"
+        }
+    }
 }
 
 
