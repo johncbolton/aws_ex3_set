@@ -1,0 +1,15 @@
+@startuml
+
+!theme mars
+
+title Diagram
+
+cloud "AWS Cloud" as aws {
+
+    rectangle "Route 53" as route53 {
+        component "Hosted Zone\n(yourdomain.dev)" as hostedZone
+    }
+}
+
+
+@enduml
