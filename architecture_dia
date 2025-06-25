@@ -9,6 +9,12 @@ cloud "AWS Cloud" as aws {
     rectangle "Route 53" as route53 {
         component "Hosted Zone\n(yourdomain.dev)" as hostedZone
     }
+
+    rectangle "EC2" as ec2 {
+        component "Launch Template" as launchTemplate {
+            note right: Amazon Linux 2\nhttpd + stress preinstalled\nindex.html shows hostname & ID
+        }
+}
 }
 
 
