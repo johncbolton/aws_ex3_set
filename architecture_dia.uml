@@ -1,85 +1,42 @@
 @startuml
-!theme mars
-
-title PorkNacho AWS Architecture
-
-cloud "AWS Cloud" as aws {
-
-    rectangle "Route 53" as route53 {
-        component "Hosted Zone\n(yourdomain.dev)" as hostedZone
-        component "A Record\n(app.yourdomain.dev)" as aliasRecord
-    }
-
-    rectangle "VPC" as vpc {
-        component "VPC\n10.0.0.0/16" as vpcMain
-        component "Internet Gateway" as igw
-        component "Route Table\n(porknacho-public-rt)" as rt
-        component "Public Subnet 1\n10.0.1.0/24" as subnet1
-        component "Public Subnet 2\n10.0.2.0/24" as subnet2
-    }
-
-    rectangle "Security Groups" as sgs {
-        component "ALB SG\nAllow HTTP (80)" as albSG
-        component "EC2 SG\nAllow HTTP from ALB,\nSSH from anywhere" as ec2SG
-    }
-
-    rectangle "EC2" as ec2 {
-        component "Key Pair\n(porknacho-key)" as keypair
-        component "Amazon Linux 2 AMI" as ami
-        component "Launch Template\nhttpd + stress\nuser_data.sh" as lt
-        database "Auto Scaling Group\n(min:1 max:4)" as asg {
-            collections "EC2 Instance 1" as instance1
-            collections "EC2 Instance 2" as instance2
-            collections "..." as instanceN
-        }
-        component "Target Tracking Policy\nCPU > 50%" as scalingPolicy
-    }
-
-    rectangle "ALB" as alb {
-        component "Application Load Balancer\n(porknacho-alb)" as theALB
-        component "HTTP Listener\nport 80" as listener
-        component "Target Group\nHealth Check: /" as targetGroup
-    }
+skinparam {
+  shadowing false
+  Padding 5
+  ArrowColor #238636
+  Linetype ortho
+  SequenceBoxBorderColor #666
+  SequenceBoxBackgroundColor #fff
 }
 
-' Route53
-route53 --> hostedZone
-hostedZone --> aliasRecord
-aliasRecord --> theALB : Alias A Record
+title Linear AWS Web Application Flow
 
-' Networking
-vpcMain --> igw
-vpcMain --> rt
-vpcMain --> subnet1
-vpcMain --> subnet2
-subnet1 --> rt
-subnet2 --> rt
+participant "Internet" as internet
 
-' Security groups
-albSG --> theALB
-ec2SG --> asg
+box "AWS Cloud" #LightBlue
+  participant "Internet Gateway\n(IGW)" as igw
+  participant "VPC" as vpc
+  participant "Public Route Table" as public_rt
+  participant "Public Subnets" as public_subnets
+  participant "Application Load Balancer\n(ALB)" as alb
+  participant "ALB Security Group" as alb_sg
+  participant "Target Group" as target_group
+  participant "Auto Scaling Group\n(ASG)" as asg
+  participant "EC2 Security Group" as ec2_sg
+  participant "EC2 Instances" as ec2_instances
+end box
 
-' ALB and listener
-theALB --> listener
-listener --> targetGroup
-
-' EC2 infra
-lt --> ami
-lt --> keypair
-lt --> ec2SG
-asg --> lt : Launches
-asg --> targetGroup : Registers with
-asg --> scalingPolicy : Uses
-
-' Instances
-asg --> instance1
-asg --> instance2
-asg --> instanceN
-
-' Health Checks
-targetGroup ..> instance1 : HTTP Check (GET /)
-targetGroup ..> instance2 : HTTP Check (GET /)
-targetGroup ..> instanceN : HTTP Check (GET /)
+internet --> igw : "HTTP Request"
+igw --> public_rt : "Routes to VPC"
+public_rt --> alb : "Routes to ALB"
+alb --> alb_sg : "Applies rules (Port 80)"
+alb_sg --> alb : "Allows inbound HTTP"
+alb --> public_subnets : "Deploys into"
+alb --> target_group : "Forwards traffic"
+target_group --> asg : "Registers instances"
+asg --> public_subnets : "Launches EC2s into"
+asg --> ec2_instances : "Manages EC2 Lifecycle"
+ec2_instances --> ec2_sg : "Applies rules (Port 80 from ALB, SSH 22)"
+alb_sg --> ec2_instances : "Allows HTTP to EC2s"
+ec2_instances --> target_group : "Reports Health"
 
 @enduml
-
