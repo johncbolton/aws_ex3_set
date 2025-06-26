@@ -215,6 +215,62 @@ resource "aws_lb_target_group" "webapp_tg" {
 }
 
 
+resource "aws_autoscaling_group" "webapp_asg" {
+  name                      = "porknacho-asg"
+  vpc_zone_identifier       = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  desired_capacity          = 2
+  max_size                  = 4
+  min_size                  = 1
+  health_check_type         = "ELB" # Use ALB health checks
+  health_check_grace_period = 300   # Give instances 5 minutes to become healthy
+
+  # Attach the Launch Template
+  launch_template {
+    id      = aws_launch_template.webapp_lt.id
+    version = "$Latest" # Always use the latest version of the launch template
+  }
+
+  # Attach to the Target Group
+  target_group_arns = [aws_lb_target_group.webapp_tg.arn]
+
+  # Add tags
+  tag {
+    key                 = "owner"
+    value               = "Papi"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "Papi-alb-asg-instance"
+    propagate_at_launch = true
+  }
+
+ enabled_metrics = ["GroupMinSize", "GroupMaxSize", "GroupDesiredCapacity", "GroupInServiceInstances", "GroupPendingInstances", "GroupTerminatingInstances", "GroupTotalInstances"]
+  metrics_granularity = "1Minute"
+
+  lifecycle {
+    create_before_destroy = true 
+  }
+}
+
+resource "aws_autoscaling_policy" "cpu_scaling_policy" {
+  name                   = "cpu-utilization-scaling"
+  policy_type            = "TargetTrackingScaling"
+  autoscaling_group_name = aws_autoscaling_group.webapp_asg.name
+  estimated_instance_warmup  = 300
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+
+    target_value               = 50 # Scale out if average CPU > 50%
+    disable_scale_in           = false
+   
+  }
+}
+
 output "vpc_id" {
   description = "ID of VPC"
   value       = aws_vpc.main.id
