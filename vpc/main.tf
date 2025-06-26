@@ -248,41 +248,6 @@ resource "aws_lb_listener" "http_listener" {
     owner = "Papi"
   }
 }
-# Application Load Balancer (ALB)
-resource "aws_lb" "webapp_alb" {
-  name               = "porknacho-alb"
-  internal           = false # Internet-facing
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets = [
-    aws_subnet.public_1.id,
-    aws_subnet.public_2.id,
-  ]
-
-  enable_deletion_protection = false # Set to true in production
-
-  tags = {
-    Name = "porknacho-alb"
-    owner = "Papi"
-  }
-}
-
-resource "aws_lb_listener" "http_listener" {
-  load_balancer_arn = aws_lb.webapp_alb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.webapp_tg.arn
-  }
-
-  tags = {
-    Name = "porknacho-http-listener"
-    owner = "Papi"
-  }
-}
-
 
 resource "aws_autoscaling_group" "webapp_asg" {
   name                      = "porknacho-asg"
